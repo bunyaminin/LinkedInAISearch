@@ -175,6 +175,8 @@ class Agent:
                             "location": search_location,
                             "start": linkedin_page_size * page_num,
                         })
+                        if self.config.search.get("remote_only", False):
+                            query += "&f_WT=2"
                         self.driver.get(f"{base_url}?{query}")
                         if self.driver.find_elements(By.CLASS_NAME, "jobs-search-no-results-banner"):
                             break
