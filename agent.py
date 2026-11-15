@@ -22,6 +22,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 from types import ModuleType
 from typing import List
+from urllib.parse import urlencode
 
 
 linkedin_page_size = 25
@@ -82,7 +83,8 @@ class Agent:
         )
     
     def __del__(self):
-        self.driver.quit()
+        if hasattr(self, "driver"):
+            self.driver.quit()
     
     def manually_apply_to_jobs(self):
         """
@@ -168,14 +170,14 @@ class Agent:
                 breakout = False
                 while True: # We go until there's no next page and save the matched jobs after every page
                     try:
-                        self.driver.get(f"{base_url}?keywords={search_term.replace(" ", "%20")}"
-                                        f"&location={search_location.replace(" ", "%20")}&start={linkedin_page_size*page_num}")
-                        try:
-                            self.driver.find_element(By.CLASS_NAME, "jobs-search-no-results-banner")
-                            # No jobs were found for that search
-                            continue
-                        except NoSuchElementException:
-                            pass
+                        query = urlencode({
+                            "keywords": search_term,
+                            "location": search_location,
+                            "start": linkedin_page_size * page_num,
+                        })
+                        self.driver.get(f"{base_url}?{query}")
+                        if self.driver.find_elements(By.CLASS_NAME, "jobs-search-no-results-banner"):
+                            break
                         # We have to scroll to the bottom of the job list to load all the elements
                         job_element_container = self.driver.find_element(By.CLASS_NAME, "jobs-search-results-list")
                         previous_scroll_position = -1
@@ -185,9 +187,12 @@ class Agent:
                             new_scroll_position = self.driver.execute_script(
                                 "arguments[0].scrollTop = arguments[0].scrollHeight; return arguments[0].scrollTop", job_element_container)
                         job_elements = self.driver.find_elements(By.CLASS_NAME, "jobs-search-results__list-item")
-                        while len(job_elements) < linkedin_page_size:
+                        load_deadline = time.monotonic() + 5
+                        while len(job_elements) < linkedin_page_size and time.monotonic() < load_deadline:
                             time.sleep(1)
                             job_elements = self.driver.find_elements(By.CLASS_NAME, "jobs-search-results__list-item")
+                        if not job_elements:
+                            break
                         try: # Close a message pop up window if one exists
                             self.driver.find_element(
                                 By.CLASS_NAME, "msg-overlay-conversation-bubble--is-active"
@@ -307,7 +312,7 @@ class Agent:
                             breakout = True
                             break
                         
-                    if breakout:
+                    if breakout or len(job_elements) < linkedin_page_size:
                         break
 
                     if page_num % self.config.search['save_results_every_x_pages'] == 0:
